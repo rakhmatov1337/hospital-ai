@@ -141,6 +141,11 @@ class PatientWriteSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
+        # Always bind patient to the hospital user who is creating it
+        hospital = self.context.get('hospital')
+        if hospital is not None and isinstance(hospital, Hospital):
+            validated_data['hospital'] = hospital
+
         phone = validated_data['phone']
         if User.objects.filter(username=phone).exists():
             raise serializers.ValidationError(
@@ -157,6 +162,11 @@ class PatientWriteSerializer(serializers.ModelSerializer):
         return patient
 
     def update(self, instance, validated_data):
+        # Ensure hospital cannot be changed via this serializer; keep current one
+        hospital = self.context.get('hospital')
+        if hospital is not None and isinstance(hospital, Hospital):
+            validated_data['hospital'] = hospital
+
         phone = validated_data.get('phone')
         if phone and phone != instance.phone:
             qs = User.objects.filter(username=phone)
