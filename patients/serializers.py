@@ -28,6 +28,17 @@ class MedicationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
+class PatientMedicationCardSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+    dosage = serializers.CharField()
+    frequency = serializers.CharField()
+    start_date = serializers.DateField()
+    end_date = serializers.DateField()
+    status = serializers.CharField()
+    due_time = serializers.CharField()
+
+
 class RecordTextSerializer(serializers.ModelSerializer):
     class Meta:
         model = RecordText
@@ -166,4 +177,18 @@ class PatientWriteSerializer(serializers.ModelSerializer):
             validated_data['user'] = user
         patient = super().update(instance, validated_data)
         return patient
+
+
+class ActivitySafetyCheckSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        max_length=500,
+        help_text='Question about activity safety (e.g., "Can I go jogging?")',
+    )
+
+
+class AIChatSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        max_length=1000,
+        help_text='Free-form question for the AI recovery assistant.',
+    )
 

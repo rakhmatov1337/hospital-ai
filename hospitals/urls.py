@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
+    HospitalAIChatView,
     HospitalDashboardView,
     HospitalMedicationViewSet,
     HospitalPatientViewSet,
@@ -24,6 +25,7 @@ urlpatterns = [
     re_path(r'^auth/refresh/?$', TokenRefreshView.as_view(), name='refresh'),
     re_path(r'^auth/me/?$', HospitalProfileView.as_view(), name='me'),
     re_path(r'^dashboard/?$', HospitalDashboardView.as_view(), name='dashboard'),
+    re_path(r'^ai-chat/?$', HospitalAIChatView.as_view(), name='ai-chat'),
 ]
 
 urlpatterns += router.urls

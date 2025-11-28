@@ -1,3 +1,5 @@
+from django.conf import settings
+from django.utils import timezone
 from rest_framework import viewsets
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -8,9 +10,11 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 from accounts.serializers import HospitalTokenObtainPairSerializer
 from hospitals.permissions import IsHospitalUser
 from hospitals.serializers import (
+    HospitalAIChatSerializer,
     HospitalDashboardSerializer,
     HospitalSerializer,
 )
+from patients.ai import _build_patient_payload, _get_client
 from patients.models import Patient
 from patients.serializers import (
     PatientDetailSerializer,
@@ -228,3 +232,101 @@ class HospitalDashboardView(APIView):
             }
         ).data
         return Response(data)
+
+
+class HospitalAIChatView(APIView):
+    """
+    AI medical assistant for hospital users.
+    Can answer questions about recovery, risk, and patient care, optionally scoped to a specific patient.
+    """
+
+    permission_classes = (IsAuthenticated, IsHospitalUser)
+
+    def post(self, request):
+        serializer = HospitalAIChatSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        question = serializer.validated_data['question']
+        patient_id = serializer.validated_data.get('patient_id')
+
+        hospital = getattr(request.user, 'hospital_profile', None)
+        if hospital is None:
+            raise NotFound('No hospital profile is linked to this account.')
+
+        client = _get_client()
+        if not client:
+            return Response(
+                {'detail': 'AI service is not available. Please try again later.'},
+                status=503,
+            )
+
+        patient = None
+        payload = {}
+        if patient_id is not None:
+            try:
+                patient = Patient.objects.select_related('surgery').get(
+                    id=patient_id, hospital=hospital
+                )
+            except Patient.DoesNotExist:
+                raise NotFound('Patient not found for this hospital.')
+
+        if patient:
+            payload = _build_patient_payload(patient)
+
+        # Build hospital-level summary
+        today = timezone.localdate()
+        total_patients = Patient.objects.filter(hospital=hospital).count()
+        surgeries_today = Surgery.objects.filter(
+            hospital=hospital, created_at__date=today
+        ).count()
+
+        system_prompt = (
+            "You are an AI medical assistant helping hospital staff with patient care, "
+            "recovery monitoring, risk assessment, and explaining medical information simply. "
+            "Use the provided hospital and (optional) patient context to answer clearly and safely. "
+            "Keep responses concise (<= 220 words) and avoid making definitive diagnoses. "
+            "Always remind that final decisions belong to licensed clinicians."
+        )
+
+        hospital_context = (
+            f"Hospital: {hospital.name}. Total patients: {total_patients}. "
+            f"Surgeries today: {surgeries_today}."
+        )
+
+        if patient and payload:
+            patient_context = (
+                f"Focused patient: {payload['patient'].get('name') or 'Unknown'}, "
+                f"age {payload['patient'].get('age') or 'Unknown'}, "
+                f"surgery {payload['surgery'].get('name') or 'Unknown'} "
+                f"({payload['surgery'].get('type') or 'Unknown'}), "
+                f"risk level {payload['surgery'].get('risk_level') or 'Unknown'}."
+            )
+        else:
+            patient_context = "No specific patient selected; answer at a general clinical level."
+
+        user_prompt = (
+            f"{hospital_context}\n"
+            f"{patient_context}\n\n"
+            f"Clinician question: {question}\n\n"
+            "Provide a structured, clinically useful answer that could appear in a hospital dashboard UI."
+        )
+
+        try:
+            response = client.chat.completions.create(
+                model=settings.OPENAI_MODEL,
+                messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt},
+                ],
+                max_tokens=400,
+                temperature=0.5,
+            )
+            answer = response.choices[0].message.content or 'Unable to generate response.'
+            return Response({'answer': answer})
+        except Exception as exc:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception('Failed to generate hospital AI chat response: %s', exc)
+            return Response(
+                {'detail': 'Failed to generate AI response. Please try again later.'},
+                status=500,
+            )

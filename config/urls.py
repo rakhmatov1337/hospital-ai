@@ -36,8 +36,9 @@ urlpatterns = [
     re_path(r'^$', schema_view.with_ui('swagger', cache_timeout=0), name='schema-swagger-ui'),
     path('admin/', admin.site.urls),
     path('api/auth/', include('accounts.urls')),
+    path('api/auth/patients/', include(('patients.urls', 'patients'), namespace='patients-auth')),
     path('api/hospitals/', include('hospitals.urls')),
-    path('api/patients/', include('patients.urls')),
+    path('api/patients/', include(('patients.urls', 'patients'), namespace='patients')),
 ]
 
 if settings.DEBUG:

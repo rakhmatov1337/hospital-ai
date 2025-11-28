@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Hospital
+from patients.serializers import PatientDetailSerializer
 
 
 class HospitalSerializer(serializers.ModelSerializer):
@@ -31,10 +32,6 @@ class HospitalDashboardSerializer(serializers.Serializer):
     appointments_today = serializers.IntegerField()
     alerts = DashboardAlertSerializer(many=True)
     tasks = DashboardTaskSerializer(many=True)
-from rest_framework import serializers
-
-from .models import Hospital
-from patients.serializers import PatientDetailSerializer
 
 
 class HospitalProfileSerializer(serializers.ModelSerializer):
@@ -54,4 +51,16 @@ class HospitalProfileSerializer(serializers.ModelSerializer):
             'patients',
         ]
         read_only_fields = fields
+
+
+class HospitalAIChatSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        max_length=1000,
+        help_text='Free-form question for the AI medical assistant.',
+    )
+    patient_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+        help_text='Optional patient ID to ground the answer in a specific patient.',
+    )
 
