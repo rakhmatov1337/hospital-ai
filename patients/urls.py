@@ -9,6 +9,7 @@ from .views import (
     PatientMeView,
     PatientMedicationsView,
     PatientDietPlanView,
+    PatientTasksUpdateView,
     PatientTokenObtainPairView,
 )
 
@@ -25,6 +26,7 @@ urlpatterns = [
     re_path(r'^activities/?$', PatientActivitiesView.as_view(), name='activities'),
     re_path(r'^activities/ask-ai/?$', ActivitySafetyCheckView.as_view(), name='activities-ask-ai'),
     re_path(r'^ai-chat/?$', PatientAIChatView.as_view(), name='ai-chat'),
+    re_path(r'^home/tasks/?$', PatientTasksUpdateView.as_view(), name='home-tasks'),
 ]
 
 

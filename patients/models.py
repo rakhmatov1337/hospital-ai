@@ -104,6 +104,7 @@ class PatientCarePlan(models.Model):
     diet_plan = models.JSONField(default=dict, blank=True)
     activities = models.JSONField(default=dict, blank=True)
     ai_insights = models.JSONField(default=dict, blank=True)
+    today_tasks = models.JSONField(default=list, blank=True, help_text='List of today\'s tasks with completion status')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

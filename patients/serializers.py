@@ -192,3 +192,12 @@ class AIChatSerializer(serializers.Serializer):
         help_text='Free-form question for the AI recovery assistant.',
     )
 
+
+class TaskSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    completed = serializers.BooleanField()
+
+
+class UpdateTasksSerializer(serializers.Serializer):
+    today_tasks = TaskSerializer(many=True)
+

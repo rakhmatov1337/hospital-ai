@@ -14,6 +14,7 @@ from patients.serializers import (
     ActivitySafetyCheckSerializer,
     PatientDetailSerializer,
     PatientMedicationCardSerializer,
+    UpdateTasksSerializer,
 )
 from surgeries.models import Medication
 from surgeries.serializers import ActivityPlanDisplaySerializer, DietPlanDisplaySerializer
@@ -80,32 +81,34 @@ class PatientHomeView(APIView):
                     'next': None,
                 },
             },
-            'today_tasks': [
-                {
-                    'label': 'Take morning medication',
-                    'completed': False,
-                },
-                {
-                    'label': 'Breakfast – follow meal plan',
-                    'completed': False,
-                },
-                {
-                    'label': 'Take afternoon medication',
-                    'completed': False,
-                },
-                {
-                    'label': 'Avoid strenuous activities',
-                    'completed': False,
-                },
-                {
-                    'label': 'Evening medication reminder',
-                    'completed': False,
-                },
-            ],
+            'today_tasks': self._get_today_tasks(care),
             'ai_alerts': alerts,
         }
 
         return Response(data)
+
+    def _get_today_tasks(self, care):
+        """Get today's tasks from care plan or return defaults."""
+        default_tasks = [
+            {'label': 'Take morning medication', 'completed': False},
+            {'label': 'Breakfast – follow meal plan', 'completed': False},
+            {'label': 'Take afternoon medication', 'completed': False},
+            {'label': 'Avoid strenuous activities', 'completed': False},
+            {'label': 'Evening medication reminder', 'completed': False},
+        ]
+        
+        if care and care.today_tasks:
+            # Merge saved tasks with defaults (preserve order and labels)
+            saved_dict = {task.get('label'): task for task in care.today_tasks}
+            result = []
+            for default_task in default_tasks:
+                label = default_task['label']
+                if label in saved_dict:
+                    result.append(saved_dict[label])
+                else:
+                    result.append(default_task)
+            return result
+        return default_tasks
 
 
 class PatientTokenObtainPairView(TokenObtainPairView):
@@ -162,14 +165,18 @@ class PatientMedicationsView(APIView):
             )
 
         serializer = PatientMedicationCardSerializer(cards, many=True)
+
+        def _flag(label_time: str) -> bool:
+            return any(c['due_time'] == label_time for c in cards)
+
         return Response(
             {
                 'medications': serializer.data,
                 'timeline': [
-                    {'label': '8 AM', 'has_medications': any(c['due_time'] == '8:00 AM' for c in cards)},
+                    {'label': '8 AM', 'has_medications': _flag('8:00 AM')},
                     {'label': '12 PM', 'has_medications': False},
-                    {'label': '2 PM', 'has_medications': any(c['due_time'] == '2:00 PM' for c in cards)},
-                    {'label': '6 PM', 'has_medications': any(c['due_time'] == '8:00 PM' for c in cards)},
+                    {'label': '2 PM', 'has_medications': _flag('2:00 PM')},
+                    {'label': '6 PM', 'has_medications': _flag('8:00 PM')},
                 ],
             }
         )
@@ -388,3 +395,25 @@ class PatientAIChatView(APIView):
                 {'detail': 'Failed to generate AI response. Please try again later.'},
                 status=500,
             )
+
+
+class PatientTasksUpdateView(APIView):
+    permission_classes = (IsAuthenticated, IsPatientUser)
+
+    def patch(self, request):
+        patient = getattr(request.user, 'patient_profile', None)
+        if not patient:
+            return Response({'detail': 'No patient profile found.'}, status=404)
+
+        serializer = UpdateTasksSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        
+        # Get or create care plan
+        from patients.models import PatientCarePlan
+        care, _ = PatientCarePlan.objects.get_or_create(patient=patient)
+        
+        # Update today_tasks
+        care.today_tasks = serializer.validated_data['today_tasks']
+        care.save(update_fields=['today_tasks', 'updated_at'])
+        
+        return Response({'today_tasks': care.today_tasks})
