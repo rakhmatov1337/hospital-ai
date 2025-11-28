@@ -45,3 +45,15 @@ class HospitalTokenObtainPairSerializer(CustomTokenObtainPairSerializer):
             self.fail('not_hospital')
         return data
 
+
+class PatientTokenObtainPairSerializer(CustomTokenObtainPairSerializer):
+    default_error_messages = {
+        'not_patient': 'Only patient accounts can access this endpoint.',
+    }
+
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        if self.user.role != self.user.Roles.PATIENT:
+            self.fail('not_patient')
+        return data
+
