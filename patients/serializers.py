@@ -2,12 +2,13 @@ from rest_framework import serializers
 
 from accounts.models import User
 from hospitals.models import Hospital
-from patients.ai import generate_and_store_care_plan
+# AI generation removed - diet plan comes from surgery
 from patients.models import MedicalRecord, Patient, PatientCarePlan, RecordText
 from surgeries.models import Medication, Surgery
 from surgeries.serializers import (
     ActivityPlanDisplaySerializer,
     DietPlanDisplaySerializer,
+    MedicationSerializer,
 )
 
 
@@ -17,7 +18,7 @@ class SurgerySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Surgery
-        fields = ['id', 'name', 'description', 'type', 'risk_level', 'diet_plan', 'activity_plan']
+        fields = ['id', 'name', 'description', 'type', 'priority_level', 'diet_plan', 'activity_plan']
 
 
 class MedicationSerializer(serializers.ModelSerializer):
@@ -56,9 +57,10 @@ class MedicalRecordSerializer(serializers.ModelSerializer):
 
 
 class PatientListSerializer(serializers.ModelSerializer):
+    surgery_id = serializers.IntegerField(source='surgery.id', read_only=True, allow_null=True)
     surgery_name = serializers.CharField(source='surgery.name', read_only=True)
-    surgery_risk_level = serializers.CharField(
-        source='surgery.risk_level', read_only=True
+    surgery_priority_level = serializers.CharField(
+        source='surgery.priority_level', read_only=True
     )
 
     class Meta:
@@ -68,8 +70,9 @@ class PatientListSerializer(serializers.ModelSerializer):
             'full_name',
             'phone',
             'assigned_doctor',
+            'surgery_id',
             'surgery_name',
-            'surgery_risk_level',
+            'surgery_priority_level',
             'status',
         ]
         read_only_fields = fields
@@ -78,7 +81,7 @@ class PatientListSerializer(serializers.ModelSerializer):
 class PatientCarePlanSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientCarePlan
-        fields = ['care_plan', 'diet_plan', 'activities', 'ai_insights', 'updated_at']
+        fields = ['care_plan', 'ai_insights', 'updated_at']
         read_only_fields = fields
 
 
@@ -88,9 +91,14 @@ class PatientDetailSerializer(serializers.ModelSerializer):
         slug_field='name',
     )
     surgery = SurgerySerializer(read_only=True)
-    medications = MedicationSerializer(many=True, read_only=True)
+    medications = serializers.SerializerMethodField()
     medical_records = MedicalRecordSerializer(many=True, read_only=True)
     care_bundle = PatientCarePlanSerializer(source='care_summary', read_only=True)
+    
+    def get_medications(self, obj):
+        if obj.surgery:
+            return MedicationSerializer(obj.surgery.medications.all(), many=True).data
+        return []
 
     class Meta:
         model = Patient
@@ -158,7 +166,11 @@ class PatientWriteSerializer(serializers.ModelSerializer):
         )
         validated_data['user'] = user
         patient = super().create(validated_data)
-        generate_and_store_care_plan(patient)
+        
+        # Generate and store AI insights
+        from patients.ai import generate_and_store_ai_insights
+        generate_and_store_ai_insights(patient)
+        
         return patient
 
     def update(self, instance, validated_data):

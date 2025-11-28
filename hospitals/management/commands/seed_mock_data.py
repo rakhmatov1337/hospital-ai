@@ -8,7 +8,7 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from hospitals.models import Hospital
-from patients.ai import generate_and_store_care_plan
+# AI generation removed - diet plan comes from surgery
 from patients.models import MedicalRecord, Patient, PatientCarePlan, RecordText
 from surgeries.models import (
     ActivityPlan,
@@ -126,7 +126,7 @@ class Command(BaseCommand):
             defaults={
                 'description': 'Right knee arthroplasty for osteoarthritis.',
                 'type': 'Orthopedic',
-                'risk_level': Surgery.RiskLevels.HIGH,
+                'priority_level': Surgery.PriorityLevels.HIGH,
                 'diet_plan': diet_plan,
                 'activity_plan': activity_plan,
             },
@@ -138,7 +138,7 @@ class Command(BaseCommand):
             defaults={
                 'description': 'Removal of inflamed appendix.',
                 'type': 'General Surgery',
-                'risk_level': Surgery.RiskLevels.MEDIUM,
+                'priority_level': Surgery.PriorityLevels.MEDIUM,
                 'diet_plan': diet_plan,
                 'activity_plan': activity_plan,
             },
@@ -166,7 +166,7 @@ class Command(BaseCommand):
                 'assigned_doctor': 'Dr. Michael Chen',
                 'admitted_at': base_admit - timedelta(days=1),
                 'ward': 'Ward B - Room 105',
-                'status': Patient.StatusChoices.STABLE,
+                'status': Patient.StatusChoices.IN_RECOVERY,
                 'surgery': app_surgery,
             },
         ]
@@ -206,20 +206,16 @@ class Command(BaseCommand):
             )
 
             # Medication
-            Medication.objects.get_or_create(
-                surgery=patient.surgery,
-                patient=patient,
-                name='Cefazolin',
-                dosage='1 g IV',
-                frequency='Every 8 hours',
-                start_date=date.today() - timedelta(days=1),
-                end_date=date.today() + timedelta(days=2),
-            )
+            if patient.surgery:
+                Medication.objects.get_or_create(
+                    surgery=patient.surgery,
+                    name='Cefazolin',
+                    dosage='1 g IV',
+                    frequency='Every 8 hours',
+                    start_date=date.today() - timedelta(days=1),
+                    end_date=date.today() + timedelta(days=2),
+                )
 
-            # AI care plan
-            if not hasattr(patient, 'care_summary'):
-                generate_and_store_care_plan(patient)
+            # AI care plan generation removed - diet plan comes from surgery
 
         self.stdout.write(self.style.SUCCESS('Mock data seeding complete.'))
-
-

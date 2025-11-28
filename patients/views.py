@@ -30,85 +30,20 @@ class PatientHomeView(APIView):
         except Patient.DoesNotExist:  # type: ignore[attr-defined]
             return Response({'detail': 'No patient profile found.'}, status=404)
 
-        today = timezone.localdate()
-
-        medications_today = patient.medications.filter(
-            start_date__lte=today, end_date__gte=today
-        )
-        medications_count = medications_today.count()
-
-        surgery = patient.surgery
-        care = getattr(patient, 'care_summary', None)
-
-        greeting = f'Hi, {patient.full_name.split()[0]}' if patient.full_name else 'Hi'
-
-        # Simple status inference based on risk and status
-        status_message = 'On track'
-        if surgery and surgery.risk_level == surgery.RiskLevels.HIGH:
-            status_message = 'Caution advised'
-        if patient.status in [patient.StatusChoices.CRITICAL, patient.StatusChoices.IN_SURGERY]:
-            status_message = 'Critical – follow instructions closely'
-
-        alerts = []
-        tasks = []
-        if care:
-            alerts = care.ai_insights.get('risk_assessments', [])
-            tasks = care.ai_insights.get('recommended_actions', [])
-
-        data = {
-            'greeting': greeting,
-            'subtitle': "Here's your recovery today",
-            'banner': {
-                'type': 'warning',
-                'message': 'With your current symptoms, caution is advised today.',
-            },
-            'cards': {
-                'medications': {
-                    'label': 'Medications',
-                    'count': medications_count,
-                    'status': f'{medications_count} today',
-                },
-                'diet_plan': {
-                    'label': 'Diet Plan',
-                    'status': 'On track',
-                },
-                'activities': {
-                    'label': 'Activities',
-                    'status': 'View safe',
-                },
-                'appointments': {
-                    'label': 'Appointments',
-                    'next': None,
-                },
-            },
-            'today_tasks': self._get_today_tasks(care),
-            'ai_alerts': alerts,
-        }
-
-        return Response(data)
-
-    def _get_today_tasks(self, care):
-        """Get today's tasks from care plan or return defaults."""
-        default_tasks = [
-            {'label': 'Take morning medication', 'completed': False},
-            {'label': 'Breakfast – follow meal plan', 'completed': False},
-            {'label': 'Take afternoon medication', 'completed': False},
-            {'label': 'Avoid strenuous activities', 'completed': False},
-            {'label': 'Evening medication reminder', 'completed': False},
-        ]
+        # Get tasks from Task model
+        from patients.models import Task
+        tasks = Task.objects.filter(patient=patient).order_by('created_at')
         
-        if care and care.today_tasks:
-            # Merge saved tasks with defaults (preserve order and labels)
-            saved_dict = {task.get('label'): task for task in care.today_tasks}
-            result = []
-            for default_task in default_tasks:
-                label = default_task['label']
-                if label in saved_dict:
-                    result.append(saved_dict[label])
-                else:
-                    result.append(default_task)
-            return result
-        return default_tasks
+        tasks_data = [
+            {
+                'id': task.id,
+                'label': task.label,
+                'completed': task.completed,
+            }
+            for task in tasks
+        ]
+
+        return Response({'tasks': tasks_data})
 
 
 class PatientTokenObtainPairView(TokenObtainPairView):
@@ -136,9 +71,12 @@ class PatientMedicationsView(APIView):
             return Response({'detail': 'No patient profile found.'}, status=404)
 
         today = timezone.localdate()
+        if not patient.surgery:
+            return Response({'detail': 'No surgery assigned to patient.'}, status=404)
+        
         meds_qs = (
             Medication.objects.filter(
-                patient=patient,
+                surgery=patient.surgery,
                 start_date__lte=today,
                 end_date__gte=today,
             )
@@ -263,28 +201,68 @@ class ActivitySafetyCheckView(APIView):
             allowed = [item.name for item in activity_plan.activities.filter(category='allowed')]
             restricted = [item.name for item in activity_plan.activities.filter(category='restricted')]
             activity_context = f"""
-Allowed activities: {', '.join(allowed) if allowed else 'None specified'}
-Restricted activities: {', '.join(restricted) if restricted else 'None specified'}
-Activity plan notes: {activity_plan.notes or 'None'}
+Ruxsat etilgan faoliyatlar: {', '.join(allowed) if allowed else "Ko'rsatilmagan"}
+Cheklangan faoliyatlar: {', '.join(restricted) if restricted else "Ko'rsatilmagan"}
+Faoliyat rejasi eslatmalari: {activity_plan.notes or "Yo'q"}
 """
 
-        system_prompt = """You are a medical assistant helping post-surgical patients understand if activities are safe for their recovery.
-Based on the patient's surgery, current status, and activity plan, provide a clear, concise answer about whether the asked activity is safe.
-Be specific about risks and recommendations. Keep your response under 150 words.
-Always remind the patient to consult their doctor for medical advice."""
+        system_prompt = """Siz operatsiyadan keyingi bemorlarga faoliyatlar tiklanish uchun xavfsiz ekanligini tushunishda yordam beradigan tibbiy yordamchisisiz.
+Bemorning to'liq ma'lumotlariga asoslanib, so'ralgan faoliyat xavfsiz ekanligi haqida qisqa (50-100 so'z), aniq va amaliy javob bering.
+Xavflar va tavsiyalar haqida aniq bo'ling. Og'irlik o'lchovlarida faqat kilogramm (kg) ishlating, funt (lbs) ishlatmang.
+Har doim bemorni tibbiy maslahat uchun shifokoriga murojaat qilishni eslatib o'ting."""
 
-        user_prompt = f"""Patient Information:
-- Surgery: {payload['surgery'].get('name', 'Unknown')} ({payload['surgery'].get('type', 'Unknown')})
-- Risk Level: {payload['surgery'].get('risk_level', 'Unknown')}
-- Current Status: {payload['patient'].get('status', 'Unknown')}
-- Days since admission: {(timezone.now().date() - patient.admitted_at.date()).days if patient.admitted_at else 'Unknown'}
+        # Get care plan information
+        care = getattr(patient, 'care_summary', None)
+        care_plan_info = ''
+        if care and care.care_plan:
+            recovery = care.care_plan.get('recovery_instructions', [])
+            if recovery:
+                care_plan_info = f"\nParvarish rejasi: {', '.join(recovery[:2])}\n"
 
-Activity Plan:
+        # Get AI insights
+        ai_insights_info = ''
+        if care and care.ai_insights:
+            insights = care.ai_insights
+            priority_assessments = insights.get('priority_level_assessments', [])
+            if priority_assessments:
+                ai_insights_info = f"\nUstuvorlik baholashlari: {', '.join(priority_assessments[:1])}\n"
+
+        # Build medications list
+        medications_list = []
+        if payload.get('medications'):
+            for m in payload['medications']:
+                medications_list.append(f"- {m['name']} ({m['dosage']})")
+        medications_text = '\n'.join(medications_list) if medications_list else 'Hali tayinlanmagan.'
+
+        days_since_admission = (timezone.now().date() - patient.admitted_at.date()).days if patient.admitted_at else 'Noma\'lum'
+
+        user_prompt = f"""Bemorning to'liq ma'lumotlari:
+- Ism: {payload['patient'].get('name') or 'Noma\'lum'}
+- Yosh: {payload['patient'].get('age') or 'Noma\'lum'}
+- Jins: {payload['patient'].get('gender') or 'Noma\'lum'}
+- Holat: {payload['patient'].get('status') or 'Noma\'lum'}
+- Tayinlangan shifokor: {payload['patient'].get('assigned_doctor') or 'Noma\'lum'}
+- Palata: {payload['patient'].get('ward') or 'Noma\'lum'}
+- Qabul qilingan sana: {payload['patient'].get('admitted_at') or 'Noma\'lum'}
+- Qabul qilingandan beri kunlar: {days_since_admission}
+
+Operatsiya ma'lumotlari:
+- Operatsiya nomi: {payload['surgery'].get('name') or 'Noma\'lum'}
+- Operatsiya tavsifi: {payload['surgery'].get('description') or 'Noma\'lum'}
+- Operatsiya turi: {payload['surgery'].get('type') or 'Noma\'lum'}
+- Ustuvorlik darajasi: {payload['surgery'].get('priority_level') or 'Noma\'lum'}
+
+Dori-darmonlar:
+{medications_text}
+
+Faoliyat rejasi:
 {activity_context}
+{care_plan_info}
+{ai_insights_info}
 
-Patient Question: {question}
+Bemor savoli: {question}
 
-Please provide a clear, helpful answer about whether this activity is safe for this patient's recovery."""
+Iltimos, bu faoliyat bemorning tiklanishi uchun xavfsiz ekanligi haqida qisqa va aniq javob bering."""
 
         try:
             response = client.chat.completions.create(
@@ -293,10 +271,10 @@ Please provide a clear, helpful answer about whether this activity is safe for t
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt},
                 ],
-                max_tokens=300,
+                max_tokens=200,
                 temperature=0.7,
             )
-            answer = response.choices[0].message.content or 'Unable to generate response.'
+            answer = response.choices[0].message.content or 'Javob yaratib bo\'lmadi.'
             return Response({'answer': answer})
         except Exception as exc:
             import logging
@@ -339,31 +317,74 @@ class PatientAIChatView(APIView):
         diet_summary = ''
         activity_summary = ''
         if surgery and surgery.diet_plan:
-            diet_summary = f" Diet plan: {surgery.diet_plan.summary} ({surgery.diet_plan.diet_type})."
+            diet_summary = f" Ovqatlanish rejasi: {surgery.diet_plan.summary} ({surgery.diet_plan.diet_type})."
         if surgery and surgery.activity_plan:
-            activity_summary = f" Activity notes: {surgery.activity_plan.notes or 'None'}."
+            activity_summary = f" Faoliyat eslatmalari: {surgery.activity_plan.notes or 'Yo\'q'}."
 
         system_prompt = (
-            "You are an AI recovery assistant helping a post-surgical patient. "
-            "Use the provided clinical context (surgery, risk level, medications, status, diet and activity plans) "
-            "to answer questions about medications, diet, activities and symptoms. "
-            "Be empathetic, concise (<= 180 words), and practical. "
-            "Never override medical advice; always remind the patient to follow their doctor's instructions."
+            "Siz operatsiyadan keyingi bemorlarga yordam beradigan AI tiklanish yordamchisisiz. "
+            "Berilgan to'liq bemor ma'lumotlaridan foydalanib, savollarga qisqa (50-100 so'z), aniq va amaliy javob bering. "
+            "Javobingiz sodda, tushunarli va bemor uchun foydali bo'lishi kerak. "
+            "Og'irlik o'lchovlarida faqat kilogramm (kg) ishlating, funt (lbs) ishlatmang. "
+            "Hech qachon tibbiy maslahatni bekor qilmang; har doim bemorni shifokorining ko'rsatmalariga rioya qilishni eslatib o'ting."
         )
 
+        # Get care plan information
+        care = getattr(patient, 'care_summary', None)
+        care_plan_info = ''
+        if care and care.care_plan:
+            recovery = care.care_plan.get('recovery_instructions', [])
+            after_discharge = care.care_plan.get('after_discharged_instructions', [])
+            if recovery or after_discharge:
+                care_plan_info = f"\nParvarish rejasi:\n"
+                if recovery:
+                    care_plan_info += f"Tiklanish ko'rsatmalari: {', '.join(recovery[:3])}\n"
+                if after_discharge:
+                    care_plan_info += f"Chiqarilgandan keyingi ko'rsatmalar: {', '.join(after_discharge[:3])}\n"
+
+        # Get AI insights
+        ai_insights_info = ''
+        if care and care.ai_insights:
+            insights = care.ai_insights
+            priority_assessments = insights.get('priority_level_assessments', [])
+            if priority_assessments:
+                ai_insights_info = f"\nUstuvorlik baholashlari: {', '.join(priority_assessments[:2])}\n"
+
+        # Get tasks
+        from patients.models import Task
+        tasks = Task.objects.filter(patient=patient, completed=False)
+        tasks_info = ''
+        if tasks.exists():
+            tasks_info = f"\nKunlik vazifalar: {', '.join([t.label for t in tasks[:3]])}\n"
+
+        # Build medications list
+        medications_list = []
+        if payload.get('medications'):
+            for m in payload['medications']:
+                medications_list.append(f"- {m['name']} ({m['dosage']}) - {m['frequency']}")
+        medications_text = '\n'.join(medications_list) if medications_list else 'Hali tayinlanmagan.'
+
         user_prompt = (
-            "Patient Context:\n"
-            f"- Name: {payload['patient'].get('name') or 'Unknown'}\n"
-            f"- Age: {payload['patient'].get('age') or 'Unknown'}\n"
-            f"- Gender: {payload['patient'].get('gender') or 'Unknown'}\n"
-            f"- Status: {payload['patient'].get('status') or 'Unknown'}\n"
-            f"- Surgery: {payload['surgery'].get('name') or 'Unknown'} "
-            f"({payload['surgery'].get('type') or 'Unknown'})\n"
-            f"- Risk level: {payload['surgery'].get('risk_level') or 'Unknown'}\n"
-            f"- Medications: {', '.join([m['name'] for m in payload.get('medications', [])]) or 'None listed.'}\n"
-            f"{diet_summary}{activity_summary}\n\n"
-            f"Patient question: {question}\n\n"
-            "Answer as if chatting in a recovery assistant app UI."
+            f"Bemorning to'liq ma'lumotlari:\n"
+            f"- Ism: {payload['patient'].get('name') or 'Noma\'lum'}\n"
+            f"- Yosh: {payload['patient'].get('age') or 'Noma\'lum'}\n"
+            f"- Jins: {payload['patient'].get('gender') or 'Noma\'lum'}\n"
+            f"- Holat: {payload['patient'].get('status') or 'Noma\'lum'}\n"
+            f"- Tayinlangan shifokor: {payload['patient'].get('assigned_doctor') or 'Noma\'lum'}\n"
+            f"- Palata: {payload['patient'].get('ward') or 'Noma\'lum'}\n"
+            f"- Qabul qilingan sana: {payload['patient'].get('admitted_at') or 'Noma\'lum'}\n"
+            f"\nOperatsiya ma'lumotlari:\n"
+            f"- Operatsiya nomi: {payload['surgery'].get('name') or 'Noma\'lum'}\n"
+            f"- Operatsiya tavsifi: {payload['surgery'].get('description') or 'Noma\'lum'}\n"
+            f"- Operatsiya turi: {payload['surgery'].get('type') or 'Noma\'lum'}\n"
+            f"- Ustuvorlik darajasi: {payload['surgery'].get('priority_level') or 'Noma\'lum'}\n"
+            f"\nDori-darmonlar:\n{medications_text}\n"
+            f"{diet_summary}{activity_summary}"
+            f"{care_plan_info}"
+            f"{ai_insights_info}"
+            f"{tasks_info}"
+            f"\nBemor savoli: {question}\n\n"
+            f"Yuqoridagi barcha ma'lumotlarga asoslanib, qisqa va aniq javob bering."
         )
 
         try:
@@ -373,17 +394,17 @@ class PatientAIChatView(APIView):
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt},
                 ],
-                max_tokens=350,
+                max_tokens=200,
                 temperature=0.7,
             )
-            answer = response.choices[0].message.content or 'Unable to generate response.'
+            answer = response.choices[0].message.content or 'Javob yaratib bo\'lmadi.'
 
-            # Simple quick suggestions – frontend can override if needed
+            # Quick suggestions in Uzbek
             suggestions = [
-                'Explain my medication schedule',
-                'What foods should I avoid?',
-                'Can I exercise today?',
-                'I have a headache, what should I do?',
+                'Dori-darmonlar jadvalimni tushuntirib bering',
+                'Qanday ovqatlardan qochishim kerak?',
+                'Bugun jismoniy mashq qila olamanmi?',
+                'Bosh og\'rig\'im bor, nima qilishim kerak?',
             ]
 
             return Response({'answer': answer, 'suggestions': suggestions})
@@ -400,20 +421,26 @@ class PatientAIChatView(APIView):
 class PatientTasksUpdateView(APIView):
     permission_classes = (IsAuthenticated, IsPatientUser)
 
-    def patch(self, request):
+    def patch(self, request, task_id):
         patient = getattr(request.user, 'patient_profile', None)
         if not patient:
             return Response({'detail': 'No patient profile found.'}, status=404)
 
-        serializer = UpdateTasksSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        try:
+            from patients.models import Task
+            task = Task.objects.get(id=task_id, patient=patient)
+        except Task.DoesNotExist:
+            return Response({'detail': 'Task not found.'}, status=404)
         
-        # Get or create care plan
-        from patients.models import PatientCarePlan
-        care, _ = PatientCarePlan.objects.get_or_create(patient=patient)
+        completed = request.data.get('completed')
+        if completed is None:
+            return Response({'detail': 'completed field is required.'}, status=400)
         
-        # Update today_tasks
-        care.today_tasks = serializer.validated_data['today_tasks']
-        care.save(update_fields=['today_tasks', 'updated_at'])
+        task.completed = bool(completed)
+        task.save(update_fields=['completed', 'updated_at'])
         
-        return Response({'today_tasks': care.today_tasks})
+        return Response({
+            'id': task.id,
+            'label': task.label,
+            'completed': task.completed,
+        })

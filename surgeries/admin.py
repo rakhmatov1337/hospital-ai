@@ -8,6 +8,7 @@ from .models import (
     DietPlanMeal,
     Medication,
     Surgery,
+    SurgeryType,
 )
 
 
@@ -39,14 +40,20 @@ class ActivityPlanAdmin(admin.ModelAdmin):
     inlines = [ActivityPlanItemInline]
 
 
+@admin.register(SurgeryType)
+class SurgeryTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'description')
+    search_fields = ('name', 'description')
+
+
 @admin.register(Surgery)
 class SurgeryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'type', 'risk_level', 'hospital')
-    list_filter = ('risk_level', 'hospital')
-    search_fields = ('name', 'type', 'hospital__name')
+    list_display = ('name', 'type', 'priority_level', 'hospital')
+    list_filter = ('priority_level', 'hospital', 'type')
+    search_fields = ('name', 'type__name', 'hospital__name')
 
 
 @admin.register(Medication)
 class MedicationAdmin(admin.ModelAdmin):
-    list_display = ('name', 'patient', 'surgery', 'start_date', 'end_date')
+    list_display = ('name', 'surgery', 'start_date', 'end_date')
     list_filter = ('surgery', 'start_date')

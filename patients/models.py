@@ -9,12 +9,8 @@ class Patient(models.Model):
         OTHER = 'other', 'Other'
 
     class StatusChoices(models.TextChoices):
-        PRE_OP = 'pre_op', 'Pre-OP'
-        IN_SURGERY = 'in_surgery', 'In Surgery'
         IN_RECOVERY = 'in_recovery', 'In Recovery'
         DISCHARGED = 'discharged', 'Discharged'
-        CRITICAL = 'critical', 'Critical'
-        STABLE = 'stable', 'Stable'
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -41,7 +37,7 @@ class Patient(models.Model):
     status = models.CharField(
         max_length=20,
         choices=StatusChoices.choices,
-        default=StatusChoices.PRE_OP,
+        default=StatusChoices.IN_RECOVERY,
     )
     surgery = models.ForeignKey(
         'surgeries.Surgery',
@@ -110,3 +106,21 @@ class PatientCarePlan(models.Model):
 
     def __str__(self) -> str:
         return f'Care Plan for {self.patient.full_name}'
+
+
+class Task(models.Model):
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.CASCADE,
+        related_name='tasks',
+    )
+    label = models.CharField(max_length=255)
+    completed = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['created_at']
+
+    def __str__(self) -> str:
+        return f'{self.label} ({self.patient.full_name})'

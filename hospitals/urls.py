@@ -4,7 +4,9 @@ from rest_framework_simplejwt.views import TokenRefreshView
 
 from .views import (
     HospitalAIChatView,
+    HospitalActivityPlanViewSet,
     HospitalDashboardView,
+    HospitalDietPlanViewSet,
     HospitalMedicationViewSet,
     HospitalPatientViewSet,
     HospitalProfileView,
@@ -19,6 +21,8 @@ router.trailing_slash = '/?'
 router.register('patients', HospitalPatientViewSet, basename='hospital-patients')
 router.register('surgeries', HospitalSurgeryViewSet, basename='hospital-surgeries')
 router.register('medications', HospitalMedicationViewSet, basename='hospital-medications')
+router.register('diet-plans', HospitalDietPlanViewSet, basename='hospital-diet-plans')
+router.register('activities', HospitalActivityPlanViewSet, basename='hospital-activity-plans')
 
 urlpatterns = [
     re_path(r'^auth/login/?$', HospitalTokenObtainPairView.as_view(), name='login'),

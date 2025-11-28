@@ -12,6 +12,7 @@ from surgeries.models import (
     DietPlanMeal,
     Medication,
     Surgery,
+    SurgeryType,
 )
 
 
@@ -100,13 +101,22 @@ class ActivityPlanDisplaySerializer(serializers.ModelSerializer):
         return self._serialize(obj, ActivityPlanItem.Categories.RESTRICTED)
 
 
+class SurgeryTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SurgeryType
+        fields = ['id', 'name', 'description']
+
+
 class SurgeryListSerializer(serializers.ModelSerializer):
+    type = SurgeryTypeSerializer(read_only=True)
+    
     class Meta:
         model = Surgery
-        fields = ['id', 'name', 'type', 'risk_level', 'description']
+        fields = ['id', 'name', 'type', 'priority_level', 'description']
 
 
 class SurgeryDetailSerializer(serializers.ModelSerializer):
+    type = SurgeryTypeSerializer(read_only=True)
     diet_plan = DietPlanDisplaySerializer(read_only=True)
     activity_plan = ActivityPlanDisplaySerializer(read_only=True)
 
@@ -117,19 +127,22 @@ class SurgeryDetailSerializer(serializers.ModelSerializer):
             'name',
             'description',
             'type',
-            'risk_level',
+            'priority_level',
             'diet_plan',
             'activity_plan',
         ]
 
 
 class SurgeryWriteSerializer(serializers.ModelSerializer):
+    type_id = serializers.PrimaryKeyRelatedField(
+        source='type', queryset=SurgeryType.objects.all(), allow_null=True, required=False
+    )
     diet_plan = DietPlanPayloadSerializer(required=False)
     activity_plan = ActivityPlanPayloadSerializer(required=False)
 
     class Meta:
         model = Surgery
-        fields = ['id', 'name', 'description', 'type', 'risk_level', 'diet_plan', 'activity_plan']
+        fields = ['id', 'name', 'description', 'type_id', 'priority_level', 'diet_plan', 'activity_plan']
         read_only_fields = ['id']
 
     def create(self, validated_data):
@@ -161,7 +174,9 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
         return SurgeryDetailSerializer(instance, context=self.context).data
 
     def _upsert_diet_plan(self, plan: DietPlan | None, data: Dict[str, Any]) -> DietPlan:
+        hospital: Hospital = self.context.get('hospital')
         plan = plan or DietPlan()
+        plan.hospital = hospital
         plan.summary = data['summary']
         plan.diet_type = data['diet_type']
         plan.goal_calories = data['goal_calories']
@@ -195,32 +210,10 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
             )
         return plan
 
-
-class MedicationSerializer(serializers.ModelSerializer):
-    surgery_id = serializers.PrimaryKeyRelatedField(
-        source='surgery', queryset=Surgery.objects.all()
-    )
-    patient_id = serializers.PrimaryKeyRelatedField(
-        source='patient', queryset=Patient.objects.all()
-    )
-
-    class Meta:
-        model = Medication
-        ref_name = 'SurgeryMedication'
-        fields = [
-            'id',
-            'surgery_id',
-            'patient_id',
-            'name',
-            'dosage',
-            'frequency',
-            'start_date',
-            'end_date',
-        ]
-        read_only_fields = ['id']
-
     def _upsert_activity_plan(self, plan: ActivityPlan | None, data: Dict[str, Any]) -> ActivityPlan:
+        hospital: Hospital = self.context.get('hospital')
         plan = plan or ActivityPlan()
+        plan.hospital = hospital
         plan.notes = data.get('notes', '')
         plan.save()
 
@@ -240,4 +233,24 @@ class MedicationSerializer(serializers.ModelSerializer):
                 description=item.get('description') or '',
             )
         return plan
+
+
+class MedicationSerializer(serializers.ModelSerializer):
+    surgery_id = serializers.PrimaryKeyRelatedField(
+        source='surgery', queryset=Surgery.objects.all()
+    )
+
+    class Meta:
+        model = Medication
+        ref_name = 'SurgeryMedication'
+        fields = [
+            'id',
+            'surgery_id',
+            'name',
+            'dosage',
+            'frequency',
+            'start_date',
+            'end_date',
+        ]
+        read_only_fields = ['id']
 
