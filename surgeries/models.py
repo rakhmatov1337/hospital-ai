@@ -5,9 +5,8 @@ class DietPlan(models.Model):
     summary = models.CharField(max_length=255)
     diet_type = models.CharField(max_length=100)
     goal_calories = models.PositiveIntegerField()
+    protein_target = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
-    allowed_foods = models.TextField()
-    forbidden_foods = models.TextField()
 
     class Meta:
         verbose_name = 'Diet plan'
@@ -18,8 +17,7 @@ class DietPlan(models.Model):
 
 
 class ActivityPlan(models.Model):
-    allowed = models.TextField()
-    restricted = models.TextField()
+    notes = models.TextField(blank=True)
 
     class Meta:
         verbose_name = 'Activity plan'
@@ -27,6 +25,65 @@ class ActivityPlan(models.Model):
 
     def __str__(self) -> str:
         return 'Activity Plan'
+
+
+class DietPlanFoodItem(models.Model):
+    class Categories(models.TextChoices):
+        ALLOWED = 'allowed', 'Allowed'
+        FORBIDDEN = 'forbidden', 'Forbidden'
+
+    plan = models.ForeignKey(
+        DietPlan,
+        on_delete=models.CASCADE,
+        related_name='food_items',
+    )
+    category = models.CharField(max_length=20, choices=Categories.choices)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['category', 'name']
+
+    def __str__(self) -> str:
+        return f'{self.get_category_display()}: {self.name}'
+
+
+class DietPlanMeal(models.Model):
+    plan = models.ForeignKey(
+        DietPlan,
+        on_delete=models.CASCADE,
+        related_name='meals',
+    )
+    meal_type = models.CharField(max_length=50)
+    description = models.TextField()
+    time = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        ordering = ['meal_type', 'time']
+
+    def __str__(self) -> str:
+        return f'{self.meal_type} ({self.plan})'
+
+
+class ActivityPlanItem(models.Model):
+    class Categories(models.TextChoices):
+        ALLOWED = 'allowed', 'Allowed'
+        RESTRICTED = 'restricted', 'Restricted'
+
+    plan = models.ForeignKey(
+        ActivityPlan,
+        on_delete=models.CASCADE,
+        related_name='activities',
+    )
+    category = models.CharField(max_length=20, choices=Categories.choices)
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['category', 'name']
+
+    def __str__(self) -> str:
+        return f'{self.get_category_display()}: {self.name}'
 
 
 class Surgery(models.Model):
@@ -39,6 +96,20 @@ class Surgery(models.Model):
     description = models.TextField(blank=True)
     type = models.CharField(max_length=255)
     risk_level = models.CharField(max_length=10, choices=RiskLevels.choices)
+    hospital = models.ForeignKey(
+        'hospitals.Hospital',
+        on_delete=models.CASCADE,
+        related_name='surgeries',
+        null=True,
+        blank=True,
+    )
+    hospital = models.ForeignKey(
+        'hospitals.Hospital',
+        on_delete=models.CASCADE,
+        related_name='surgeries',
+        null=True,
+        blank=True,
+    )
     diet_plan = models.ForeignKey(
         DietPlan,
         on_delete=models.SET_NULL,

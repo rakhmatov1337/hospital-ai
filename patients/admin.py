@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import MedicalRecord, Patient, RecordText
+from .models import MedicalRecord, Patient, PatientCarePlan, RecordText
 
 
 @admin.register(Patient)
@@ -19,3 +19,9 @@ class RecordTextAdmin(admin.ModelAdmin):
 @admin.register(MedicalRecord)
 class MedicalRecordAdmin(admin.ModelAdmin):
     list_display = ('record_title', 'patient', 'record_text')
+
+
+@admin.register(PatientCarePlan)
+class PatientCarePlanAdmin(admin.ModelAdmin):
+    list_display = ('patient', 'updated_at')
+    search_fields = ('patient__full_name',)

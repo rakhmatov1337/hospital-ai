@@ -34,8 +34,7 @@ class Patient(models.Model):
     full_name = models.CharField(max_length=255)
     age = models.PositiveIntegerField()
     gender = models.CharField(max_length=10, choices=GenderChoices.choices)
-    phone = models.CharField(max_length=50)
-    email = models.EmailField()
+    phone = models.CharField(max_length=50, unique=True)
     assigned_doctor = models.CharField(max_length=255)
     admitted_at = models.DateTimeField()
     ward = models.CharField(max_length=255, help_text='Example: Ward A - Room 204')
@@ -93,3 +92,20 @@ class MedicalRecord(models.Model):
 
     def __str__(self) -> str:
         return f'{self.record_title} ({self.patient.full_name})'
+
+
+class PatientCarePlan(models.Model):
+    patient = models.OneToOneField(
+        Patient,
+        on_delete=models.CASCADE,
+        related_name='care_summary',
+    )
+    care_plan = models.JSONField(default=dict, blank=True)
+    diet_plan = models.JSONField(default=dict, blank=True)
+    activities = models.JSONField(default=dict, blank=True)
+    ai_insights = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f'Care Plan for {self.patient.full_name}'
