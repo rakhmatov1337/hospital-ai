@@ -16,7 +16,7 @@ from patients.serializers import (
     PatientMedicationCardSerializer,
     UpdateTasksSerializer,
 )
-from surgeries.models import DietPlan, Medication
+from surgeries.models import ActivityPlan, DietPlan, Medication
 from surgeries.serializers import ActivityPlanDisplaySerializer, DietPlanDisplaySerializer
 
 
@@ -161,31 +161,53 @@ class PatientActivitiesView(APIView):
             return Response({'detail': 'No patient profile found.'}, status=404)
 
         surgery = patient.surgery
-        if not surgery or not surgery.activity_plan:
-            return Response({'detail': 'No activity plan available.'}, status=404)
 
-        activity_plan = surgery.activity_plan
-        serializer = ActivityPlanDisplaySerializer(activity_plan)
-        
-        # Add general guidelines based on the activity plan notes
-        guidelines = []
-        if activity_plan.notes:
-            # Split notes by newlines or common separators
-            note_lines = [line.strip() for line in activity_plan.notes.split('\n') if line.strip()]
-            guidelines = note_lines if note_lines else []
-        
-        # Default guidelines if none provided
-        if not guidelines:
-            guidelines = [
-                'Start slowly and gradually increase activity',
-                'Stop if you experience pain or discomfort',
-                'Rest when needed and don\'t push yourself',
-                'Consult your doctor before starting new activities',
-            ]
-        
-        data = serializer.data
-        data['general_guidelines'] = guidelines
-        return Response(data)
+        # Current activity plan bound to the patient's surgery (if any)
+        current_plan_data = None
+        if surgery and surgery.activity_plan:
+            activity_plan = surgery.activity_plan
+            serializer = ActivityPlanDisplaySerializer(activity_plan)
+
+            # Add general guidelines based on the activity plan notes
+            guidelines = []
+            if activity_plan.notes:
+                # Split notes by newlines or common separators
+                note_lines = [
+                    line.strip()
+                    for line in activity_plan.notes.split('\n')
+                    if line.strip()
+                ]
+                guidelines = note_lines if note_lines else []
+
+            # Default guidelines if none provided
+            if not guidelines:
+                guidelines = [
+                    'Start slowly and gradually increase activity',
+                    'Stop if you experience pain or discomfort',
+                    "Rest when needed and don't push yourself",
+                    'Consult your doctor before starting new activities',
+                ]
+
+            current_plan_data = serializer.data
+            current_plan_data['general_guidelines'] = guidelines
+
+        # All activity plans available in the patient's hospital
+        if not patient.hospital:
+            available_plans = []
+        else:
+            plans_qs = ActivityPlan.objects.filter(
+                hospital=patient.hospital
+            ).order_by('-created_at')
+            available_plans = ActivityPlanDisplaySerializer(
+                plans_qs, many=True
+            ).data
+
+        return Response(
+            {
+                'current_plan': current_plan_data,
+                'plans': available_plans,
+            }
+        )
 
 
 class ActivitySafetyCheckView(APIView):
