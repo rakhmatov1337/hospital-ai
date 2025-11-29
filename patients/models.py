@@ -33,7 +33,6 @@ class Patient(models.Model):
     phone = models.CharField(max_length=50, unique=True)
     assigned_doctor = models.CharField(max_length=255)
     admitted_at = models.DateTimeField()
-    ward = models.CharField(max_length=255, help_text='Example: Ward A - Room 204')
     status = models.CharField(
         max_length=20,
         choices=StatusChoices.choices,

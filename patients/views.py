@@ -242,7 +242,6 @@ Har doim bemorni tibbiy maslahat uchun shifokoriga murojaat qilishni eslatib o't
 - Jins: {payload['patient'].get('gender') or 'Noma\'lum'}
 - Holat: {payload['patient'].get('status') or 'Noma\'lum'}
 - Tayinlangan shifokor: {payload['patient'].get('assigned_doctor') or 'Noma\'lum'}
-- Palata: {payload['patient'].get('ward') or 'Noma\'lum'}
 - Qabul qilingan sana: {payload['patient'].get('admitted_at') or 'Noma\'lum'}
 - Qabul qilingandan beri kunlar: {days_since_admission}
 
@@ -371,7 +370,6 @@ class PatientAIChatView(APIView):
             f"- Jins: {payload['patient'].get('gender') or 'Noma\'lum'}\n"
             f"- Holat: {payload['patient'].get('status') or 'Noma\'lum'}\n"
             f"- Tayinlangan shifokor: {payload['patient'].get('assigned_doctor') or 'Noma\'lum'}\n"
-            f"- Palata: {payload['patient'].get('ward') or 'Noma\'lum'}\n"
             f"- Qabul qilingan sana: {payload['patient'].get('admitted_at') or 'Noma\'lum'}\n"
             f"\nOperatsiya ma'lumotlari:\n"
             f"- Operatsiya nomi: {payload['surgery'].get('name') or 'Noma\'lum'}\n"

@@ -110,7 +110,6 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             'phone',
             'assigned_doctor',
             'admitted_at',
-            'ward',
             'status',
             'hospital',
             'surgery',
@@ -136,7 +135,6 @@ class PatientWriteSerializer(serializers.ModelSerializer):
             'phone',
             'assigned_doctor',
             'admitted_at',
-            'ward',
             'status',
             'surgery_id',
         ]

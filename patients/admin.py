@@ -7,7 +7,7 @@ from .models import MedicalRecord, Patient, PatientCarePlan, RecordText
 class PatientAdmin(admin.ModelAdmin):
     list_display = ('full_name', 'hospital', 'status', 'surgery')
     list_filter = ('status', 'hospital')
-    search_fields = ('full_name', 'assigned_doctor', 'ward')
+    search_fields = ('full_name', 'assigned_doctor')
 
 
 @admin.register(RecordText)

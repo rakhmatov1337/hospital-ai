@@ -109,7 +109,6 @@ def _build_patient_payload(patient: Patient) -> Dict[str, Any]:
             'gender': patient.gender,
             'status': patient.status,
             'assigned_doctor': patient.assigned_doctor,
-            'ward': patient.ward,
             'admitted_at': patient.admitted_at.isoformat() if patient.admitted_at else None,
         },
         'surgery': {
@@ -198,7 +197,6 @@ Bemor ma'lumotlari:
 - Jins: {payload['patient']['gender']}
 - Holat: {payload['patient']['status']}
 - Tayinlangan shifokor: {payload['patient']['assigned_doctor']}
-- Palata: {payload['patient']['ward']}
 - Qabul qilingan sana: {payload['patient']['admitted_at']}
 
 Operatsiya ma'lumotlari:

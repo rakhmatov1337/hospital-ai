@@ -7,9 +7,11 @@ from .views import (
     HospitalActivityPlanViewSet,
     HospitalDashboardView,
     HospitalDietPlanViewSet,
+    HospitalDietTypesView,
     HospitalMedicationViewSet,
     HospitalPatientViewSet,
     HospitalProfileView,
+    HospitalSurgeryTypesView,
     HospitalSurgeryViewSet,
     HospitalTokenObtainPairView,
 )
@@ -30,6 +32,8 @@ urlpatterns = [
     re_path(r'^auth/me/?$', HospitalProfileView.as_view(), name='me'),
     re_path(r'^dashboard/?$', HospitalDashboardView.as_view(), name='dashboard'),
     re_path(r'^ai-chat/?$', HospitalAIChatView.as_view(), name='ai-chat'),
+    re_path(r'^diet-types/?$', HospitalDietTypesView.as_view(), name='diet-types'),
+    re_path(r'^surgery-types/?$', HospitalSurgeryTypesView.as_view(), name='surgery-types'),
 ]
 
 urlpatterns += router.urls

@@ -32,6 +32,7 @@ from surgeries.models import (
     DietPlanMeal,
     Medication,
     Surgery,
+    SurgeryType,
 )
 from surgeries.serializers import (
     ActivityPlanDisplaySerializer,
@@ -41,6 +42,7 @@ from surgeries.serializers import (
     MedicationSerializer,
     SurgeryDetailSerializer,
     SurgeryListSerializer,
+    SurgeryTypeSerializer,
     SurgeryWriteSerializer,
 )
 
@@ -234,6 +236,7 @@ class HospitalDietPlanViewSet(viewsets.ModelViewSet):
         plan = plan or DietPlan()
         plan.hospital = hospital
         plan.summary = data['summary']
+        # Store the human-readable diet type string from payload
         plan.diet_type = data['diet_type']
         plan.goal_calories = data['goal_calories']
         plan.protein_target = data.get('protein_target', '')
@@ -425,6 +428,62 @@ class HospitalDashboardView(APIView):
                 'recent_patients': recent_patients,
             }
         ).data
+        return Response(data)
+
+
+class HospitalDietTypesView(APIView):
+    """
+    Returns the list of distinct diet types for the authenticated hospital.
+    """
+
+    permission_classes = (IsAuthenticated, IsHospitalUser)
+
+    def get(self, request):
+        hospital = getattr(request.user, 'hospital_profile', None)
+        if hospital is None:
+            raise NotFound('No hospital profile is linked to this account.')
+
+        # Return all diet plans for this hospital so frontend can select by id
+        plans = (
+            DietPlan.objects.filter(hospital=hospital)
+            .exclude(diet_type__isnull=True)
+            .exclude(diet_type__exact='')
+            .order_by('-id')
+        )
+
+        diet_types = [
+            {
+                'id': plan.id,
+                # Use plan.id as the selectable id, and diet_type as the name/label.
+                'diet_type_name': plan.diet_type,
+                'summary': plan.summary,
+            }
+            for plan in plans
+        ]
+
+        return Response({'diet_types': diet_types})
+
+
+class HospitalSurgeryTypesView(APIView):
+    """
+    Returns the list of surgery types available for the authenticated hospital.
+    """
+
+    permission_classes = (IsAuthenticated, IsHospitalUser)
+
+    def get(self, request):
+        hospital = getattr(request.user, 'hospital_profile', None)
+        if hospital is None:
+            raise NotFound('No hospital profile is linked to this account.')
+
+        # Get surgery types that are used by surgeries in this hospital
+        qs = (
+            SurgeryType.objects.filter(surgeries__hospital=hospital)
+            .distinct()
+            .order_by('name')
+        )
+
+        data = SurgeryTypeSerializer(qs, many=True).data
         return Response(data)
 
 
@@ -629,7 +688,6 @@ class HospitalAIChatView(APIView):
                 f"- Jins: {payload['patient'].get('gender') or 'Noma\'lum'}\n"
                 f"- Holat: {payload['patient'].get('status') or 'Noma\'lum'}\n"
                 f"- Tayinlangan shifokor: {payload['patient'].get('assigned_doctor') or 'Noma\'lum'}\n"
-                f"- Palata: {payload['patient'].get('ward') or 'Noma\'lum'}\n"
                 f"- Qabul qilingan sana: {payload['patient'].get('admitted_at') or 'Noma\'lum'}\n"
                 f"\nOperatsiya ma'lumotlari:\n"
                 f"- Operatsiya nomi: {payload['surgery'].get('name') or 'Noma\'lum'}\n"

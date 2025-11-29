@@ -31,6 +31,7 @@ class MealPlanSerializer(serializers.Serializer):
 
 class DietPlanPayloadSerializer(serializers.Serializer):
     summary = serializers.CharField(max_length=255)
+    # Simple string label for diet type (e.g. "Low-Sodium, High-Protein")
     diet_type = serializers.CharField(max_length=100)
     goal_calories = serializers.IntegerField(min_value=0)
     protein_target = serializers.CharField(max_length=100, required=False, allow_blank=True)
@@ -56,6 +57,8 @@ class DietPlanDisplaySerializer(serializers.ModelSerializer):
     allowed_foods = serializers.SerializerMethodField()
     forbidden_foods = serializers.SerializerMethodField()
     meal_plan = DietPlanMealModelSerializer(many=True, read_only=True)
+    # For convenience in hospital lists, expose diet_type_name aliasing diet_type.
+    diet_type_name = serializers.SerializerMethodField()
 
     class Meta:
         model = DietPlan
@@ -63,6 +66,7 @@ class DietPlanDisplaySerializer(serializers.ModelSerializer):
             'id',
             'summary',
             'diet_type',
+            'diet_type_name',
             'goal_calories',
             'protein_target',
             'notes',
@@ -80,6 +84,12 @@ class DietPlanDisplaySerializer(serializers.ModelSerializer):
 
     def get_forbidden_foods(self, obj):
         return self._serialize_foods(obj, DietPlanFoodItem.Categories.FORBIDDEN)
+
+    def get_diet_type_name(self, obj):
+        """
+        Alias for diet_type so the client can use a consistent name field.
+        """
+        return obj.diet_type
 
 
 class ActivityPlanDisplaySerializer(serializers.ModelSerializer):
@@ -137,12 +147,30 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
     type_id = serializers.PrimaryKeyRelatedField(
         source='type', queryset=SurgeryType.objects.all(), allow_null=True, required=False
     )
+    # Existing nested create/update payloads
     diet_plan = DietPlanPayloadSerializer(required=False)
     activity_plan = ActivityPlanPayloadSerializer(required=False)
+    # New: link to existing plans by id
+    diet_plan_id = serializers.PrimaryKeyRelatedField(
+        source='diet_plan', queryset=DietPlan.objects.all(), allow_null=True, required=False
+    )
+    activity_plan_id = serializers.PrimaryKeyRelatedField(
+        source='activity_plan', queryset=ActivityPlan.objects.all(), allow_null=True, required=False
+    )
 
     class Meta:
         model = Surgery
-        fields = ['id', 'name', 'description', 'type_id', 'priority_level', 'diet_plan', 'activity_plan']
+        fields = [
+            'id',
+            'name',
+            'description',
+            'type_id',
+            'priority_level',
+            'diet_plan',
+            'activity_plan',
+            'diet_plan_id',
+            'activity_plan_id',
+        ]
         read_only_fields = ['id']
 
     def create(self, validated_data):
@@ -150,10 +178,15 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
         activity_data = validated_data.pop('activity_plan', None)
         hospital: Hospital = self.context['hospital']
         surgery = Surgery.objects.create(hospital=hospital, **validated_data)
-        if diet_data:
+        # If nested dicts are provided, upsert; if existing instances are provided via *_id, just assign.
+        if isinstance(diet_data, dict):
             surgery.diet_plan = self._upsert_diet_plan(surgery.diet_plan, diet_data)
-        if activity_data:
+        elif isinstance(diet_data, DietPlan):
+            surgery.diet_plan = diet_data
+        if isinstance(activity_data, dict):
             surgery.activity_plan = self._upsert_activity_plan(surgery.activity_plan, activity_data)
+        elif isinstance(activity_data, ActivityPlan):
+            surgery.activity_plan = activity_data
         surgery.save()
         return surgery
 
@@ -163,10 +196,14 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        if diet_data is not None:
+        if isinstance(diet_data, dict):
             instance.diet_plan = self._upsert_diet_plan(instance.diet_plan, diet_data)
-        if activity_data is not None:
+        elif isinstance(diet_data, DietPlan):
+            instance.diet_plan = diet_data
+        if isinstance(activity_data, dict):
             instance.activity_plan = self._upsert_activity_plan(instance.activity_plan, activity_data)
+        elif isinstance(activity_data, ActivityPlan):
+            instance.activity_plan = activity_data
         instance.save()
         return instance
 
@@ -178,6 +215,7 @@ class SurgeryWriteSerializer(serializers.ModelSerializer):
         plan = plan or DietPlan()
         plan.hospital = hospital
         plan.summary = data['summary']
+        # Store the human-readable diet type string
         plan.diet_type = data['diet_type']
         plan.goal_calories = data['goal_calories']
         plan.protein_target = data.get('protein_target', '')
