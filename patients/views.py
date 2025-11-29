@@ -16,7 +16,7 @@ from patients.serializers import (
     PatientMedicationCardSerializer,
     UpdateTasksSerializer,
 )
-from surgeries.models import Medication
+from surgeries.models import DietPlan, Medication
 from surgeries.serializers import ActivityPlanDisplaySerializer, DietPlanDisplaySerializer
 
 
@@ -128,12 +128,28 @@ class PatientDietPlanView(APIView):
         if not patient:
             return Response({'detail': 'No patient profile found.'}, status=404)
 
-        surgery = patient.surgery
-        if not surgery or not surgery.diet_plan:
-            return Response({'detail': 'No diet plan available.'}, status=404)
+        # Current diet plan comes from the patient's assigned surgery, if any
+        current_plan_data = None
+        if patient.surgery and patient.surgery.diet_plan:
+            current_plan_data = DietPlanDisplaySerializer(
+                patient.surgery.diet_plan
+            ).data
 
-        serializer = DietPlanDisplaySerializer(surgery.diet_plan)
-        return Response(serializer.data)
+        # All diet plans available in the patient's hospital
+        if not patient.hospital:
+            available_plans = []
+        else:
+            plans_qs = DietPlan.objects.filter(hospital=patient.hospital).order_by(
+                '-created_at'
+            )
+            available_plans = DietPlanDisplaySerializer(plans_qs, many=True).data
+
+        return Response(
+            {
+                'current_plan': current_plan_data,
+                'plans': available_plans,
+            }
+        )
 
 
 class PatientActivitiesView(APIView):
